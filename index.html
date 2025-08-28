@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Manual de Atendimento - Seja Fibra</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:#f4f6f9; color:#333; }
+    header { background:#1976d2; color:white; padding:10px 20px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 5px rgba(0,0,0,0.1); }
+    #container { display:flex; height:calc(100vh - 50px); }
+    #menu { width:250px; background:#fff; border-right:1px solid #ddd; overflow-y:auto; display:flex; flex-direction:column; }
+    #menu h2 { padding:15px; margin:0; background:#f0f0f0; font-size:16px; border-bottom:1px solid #ddd; }
+    #menu ul { list-style:none; margin:0; padding:0; flex-grow:1; overflow-y:auto; }
+    #menu li { border-bottom:1px solid #eee; }
+    #menu a { display:block; padding:12px 15px; text-decoration:none; color:#333; transition:background 0.2s; }
+    #menu a:hover, #menu a.active { background:#e3f2fd; font-weight:bold; }
+    #menu li.dragging { opacity:0.5; background:#e3f2fd; }
+    #content { flex:1; padding:25px; overflow-y:auto; background:#fff; margin:15px; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,0.05); }
+    .content-header { border-bottom:2px solid #1976d2; padding-bottom:10px; margin-bottom:20px; }
+    .btn { padding:8px 15px; border:none; border-radius:4px; cursor:pointer; margin:4px; font-size:14px; transition:all 0.2s; }
+    .btn-primary { background:#1976d2; color:white; }
+    .btn-primary:hover { background:#1565c0; }
+    .btn-danger { background:#c62828; color:white; }
+    .btn-danger:hover { background:#b71c1c; }
+    textarea { width:100%; height:200px; margin-top:10px; padding:12px; border:1px solid #ddd; border-radius:4px; font-family:inherit; }
+    .admin-tools { margin-top:20px; padding-top:20px; border-top:1px dashed #ddd; }
+    .login-container { display:flex; justify-content:center; align-items:center; height:100vh; background:#f4f6f9; }
+    .login-form { background:white; padding:30px; border-radius:8px; box-shadow:0 4px 15px rgba(0,0,0,0.1); width:100%; max-width:400px; }
+    .login-form h2 { margin-top:0; color:#1976d2; text-align:center; }
+    .form-group { margin-bottom:20px; }
+    .form-group label { display:block; margin-bottom:8px; font-weight:500; }
+    .form-control { width:100%; padding:12px; border:1px solid #ddd; border-radius:4px; font-size:16px; }
+    .password-container { position:relative; }
+    .toggle-password { position:absolute; right:12px; top:50%; transform:translateY(-50%); cursor:pointer; color:#777; }
+    .hidden { display:none; }
+    #adminAdd { padding:15px; border-top:1px solid #ddd; background:#f9f9f9; }
+    .user-info { display:flex; align-items:center; gap:10px; }
+    .admin-badge { background:#ffc107; color:#333; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:bold; }
+    .empty-state { text-align:center; padding:40px 20px; color:#777; }
+    .empty-state i { font-size:48px; margin-bottom:15px; color:#ccc; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Manual de Atendimento</h1>
+    <div id="userInfo">Não logado</div>
+  </header>
+  
+  <div id="loginScreen" class="login-container">
+    <div class="login-form">
+      <h2>Login</h2>
+      <form id="loginForm">
+        <div class="form-group">
+          <label for="email">E-mail</label>
+          <input type="email" id="email" class="form-control" required placeholder="Seu e-mail">
+        </div>
+        <div class="form-group">
+          <label for="password">Senha</label>
+          <div class="password-container">
+            <input type="password" id="password" class="form-control" required placeholder="Sua senha">
+            <span class="toggle-password" id="togglePassword"><i class="far fa-eye"></i></span>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%">Entrar</button>
+      </form>
+      <div id="loginError" style="color:#c62828;margin-top:15px;display:none;"></div>
+    </div>
+  </div>
+
+  <div id="appContainer" class="hidden">
+    <div id="container">
+      <div id="menu">
+        <h2>Seções</h2>
+        <ul id="pageList"><!-- Títulos das seções --></ul>
+        <div id="adminAdd" style="display:none;">
+          <button class="btn btn-primary" id="btnAdd" style="width:100%">
+            <i class="fas fa-plus"></i> Nova Seção
+          </button>
+        </div>
+      </div>
+      <div id="content">
+        <div class="empty-state">
+          <i class="fas fa-file-alt"></i>
+          <h3>Nenhuma seção selecionada</h3>
+          <p>Selecione uma seção no menu à esquerda para visualizar seu conteúdo.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
+    import { getDatabase, ref, get, set, update, remove, onValue } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAmvmY0oBXs3QTuAtPD9LcxB8mFUNXcaMA",
+      authDomain: "manual-f1880.firebaseapp.com",
+      databaseURL: "https://manual-f1880-default-rtdb.firebaseio.com",
+      projectId: "manual-f1880",
+      storageBucket: "manual-f1880.firebasestorage.app",
+      messagingSenderId: "895135568290",
+      appId: "1:895135568290:web:6f006ceb0e284cc70622fb"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getDatabase(app);
+    const ADMINS = ["bioranss@gmail.com", "paulo@sejafibra.net"];
+
+    let currentUser = null, currentPage = null, isAdmin = false;
+
+    const loginScreen = document.getElementById('loginScreen');
+    const appContainer = document.getElementById('appContainer');
+    const loginForm = document.getElementById('loginForm');
+    const loginError = document.getElementById('loginError');
+    const togglePassword = document.getElementById('togglePassword');
+    const passwordInput = document.getElementById('password');
+    const pageList = document.getElementById('pageList');
+    const contentDiv = document.getElementById('content');
+    const adminAdd = document.getElementById('adminAdd');
+    const btnAdd = document.getElementById('btnAdd');
+
+    togglePassword.addEventListener('click', function() {
+      const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+      passwordInput.setAttribute('type', type);
+      this.innerHTML = type === 'password' ? '<i class="far fa-eye"></i>' : '<i class="far fa-eye-slash"></i>';
+    });
+
+    loginForm.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (error) {
+        loginError.textContent = error.message;
+        loginError.style.display = 'block';
+      }
+    });
+
+    async function doLogout(){ try{ await signOut(auth);}catch(e){ console.error("Erro logout:", e);} }
+
+    onAuthStateChanged(auth, (user) => {
+      if(user){
+        currentUser = user;
+        isAdmin = ADMINS.includes(user.email);
+        document.getElementById("userInfo").innerHTML = `
+          <div class="user-info">
+            <span>${user.email}</span> 
+            ${isAdmin ? '<span class="admin-badge">Admin</span>' : ''}
+            <button class="btn btn-danger" id="logoutBtn">Sair</button>
+          </div>`;
+        document.getElementById("logoutBtn").addEventListener("click", doLogout);
+        loginScreen.classList.add('hidden');
+        appContainer.classList.remove('hidden');
+        loadMenu();
+      } else {
+        currentUser = null;
+        loginScreen.classList.remove('hidden');
+        appContainer.classList.add('hidden');
+        pageList.innerHTML = "";
+        contentDiv.innerHTML = `
+          <div class="empty-state">
+            <i class="fas fa-file-alt"></i>
+            <h3>Nenhuma seção selecionada</h3>
+            <p>Selecione uma seção no menu à esquerda para visualizar seu conteúdo.</p>
+          </div>`;
+      }
+    });
+
+    function loadMenu(){
+      const pagesRef = ref(db, "manual/pages");
+      onValue(pagesRef, (snap) => {
+        pageList.innerHTML = "";
+        if(snap.exists()){
+          const pages = snap.val();
+          const keys = Object.keys(pages).sort((a,b) => (pages[a].order||0) - (pages[b].order||0));
+
+          keys.forEach(slug => {
+            const li = document.createElement("li");
+            const a = document.createElement("a");
+            a.href = "#";
+            a.textContent = pages[slug].title || "Sem título";
+
+            a.addEventListener("click", (ev) => {
+              ev.preventDefault();
+              document.querySelectorAll('#menu a').forEach(l => l.classList.remove('active'));
+              a.classList.add('active');
+              loadPage(slug, pages[slug]);
+            });
+
+            li.appendChild(a);
+
+            // Drag & Drop para admins
+            if(isAdmin){
+              li.setAttribute("draggable", "true");
+              li.dataset.slug = slug;
+
+              li.addEventListener("dragstart", (e) => {
+                e.dataTransfer.setData("text/plain", slug);
+                li.classList.add("dragging");
+              });
+
+              li.addEventListener("dragend", () => {
+                li.classList.remove("dragging");
+              });
+
+              li.addEventListener("dragover", (e) => {
+                e.preventDefault();
+                const dragging = document.querySelector(".dragging");
+                if(dragging && dragging !== li){
+                  const rect = li.getBoundingClientRect();
+                  const offset = e.clientY - rect.top;
+                  if(offset > rect.height / 2){
+                    li.after(dragging);
+                  } else {
+                    li.before(dragging);
+                  }
+                }
+              });
+            }
+
+            pageList.appendChild(li);
+          });
+
+          // Salvar ordem após arrastar
+          if(isAdmin){
+            pageList.addEventListener("drop", () => {
+              const newOrder = {};
+              [...pageList.children].forEach((li, index) => {
+                const slug = li.dataset.slug;
+                if(slug){
+                  newOrder[`manual/pages/${slug}/order`] = index;
+                }
+              });
+              update(ref(db), newOrder);
+            }, { once: true });
+          }
+
+        } else {
+          pageList.innerHTML = "<li style='padding:15px;color:#777;'>Nenhuma seção encontrada</li>";
+        }
+      });
+
+      adminAdd.style.display = isAdmin ? "block" : "none";
+      btnAdd.onclick = newPage;
+    }
+
+    function loadPage(slug, page){
+      currentPage = slug;
+      let html = `
+        <div class="content-header"><h2>${page.title}</h2></div>
+        <div>${page.content || "<p>Esta seção ainda não possui conteúdo.</p>"}</div>`;
+      if(isAdmin){
+        html += `
+          <div class="admin-tools">
+            <h3>Ferramentas de Administração</h3>
+            <textarea id="editor">${page.content || ""}</textarea><br>
+            <button class="btn btn-primary" id="btnSave">Salvar Alterações</button>
+            <button class="btn btn-danger" id="btnDelete">Excluir Seção</button>
+          </div>`;
+      }
+      contentDiv.innerHTML = html;
+
+      if(isAdmin){
+        document.getElementById("btnSave").addEventListener("click", async () => {
+          const newContent = document.getElementById("editor").value;
+          await update(ref(db, `manual/pages/${slug}`), { content:newContent, updated_at:new Date().toISOString(), author:currentUser.email });
+          alert("Página salva!");
+        });
+        document.getElementById("btnDelete").addEventListener("click", async () => {
+          if(confirm("Excluir permanentemente esta seção?")){
+            await remove(ref(db, `manual/pages/${slug}`));
+            contentDiv.innerHTML = `<div class="empty-state"><i class="fas fa-check-circle" style="color:#4caf50;"></i><h3>Seção excluída</h3><p>Selecione outra seção no menu à esquerda.</p></div>`;
+          }
+        });
+      }
+    }
+
+    function newPage(){
+      const title = prompt("Digite o título da nova seção:");
+      if(!title) return;
+      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g,"-");
+      const pageRef = ref(db, `manual/pages/${slug}`);
+      get(pageRef).then((snap) => {
+        if(snap.exists()){ alert("Já existe uma seção com título similar."); return; }
+        set(pageRef, { title, content:"Conteúdo da nova seção.", order:Date.now(), updated_at:new Date().toISOString(), author:currentUser.email })
+          .then(()=> alert(`Seção "${title}" criada!`))
+          .catch(e => alert("Erro: "+e.message));
+      });
+    }
+  </script>
+</body>
+</html>
